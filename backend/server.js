@@ -8,7 +8,7 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
-const BOT_TOKEN = process.env.BOT_TOKEN || '8818889322:AAHk-tw3ZO961EVonj1zI7hb1p8KK12yT6o';
+const BOT_TOKEN = process.env.BOT_TOKEN; // Render Environment Variables se read karega
 
 // In-memory active OTP store (30s Expiry)
 const activeOtps = {};
@@ -33,8 +33,8 @@ async function sendTelegramMessage(telegramId, text) {
 // 1. UNIVERSAL API GATEWAY HANDLER
 // ==========================================
 const handlePayout = (req, res) => {
-  const { token, paytm, upi, amount, comment } = { ...req.query, ...req.body };
-  const receiver = paytm || upi;
+  const { token, paytm, upi, paytoNumber, amount, comment } = { ...req.query, ...req.body };
+  const receiver = paytm || upi || paytoNumber;
   const payAmount = parseFloat(amount);
 
   if (!token || !receiver || isNaN(payAmount) || payAmount <= 0) {
@@ -88,7 +88,7 @@ const handlePayout = (req, res) => {
   });
 };
 
-app.all(['/api.php', '/upi.php', '/api/api.php', '/apis/api', '/api/pay'], handlePayout);
+app.all(['/api.php', '/upi.php', '/api/api.php', '/apis/api', '/api/pay', '/api'], handlePayout);
 
 // ==========================================
 // 2. AUTHENTICATION (Initial Balance: ₹0.00)
@@ -281,6 +281,7 @@ app.get('/api/admin/logs', (req, res) => {
 // ==========================================
 let lastUpdateId = 0;
 async function pollTelegramUpdates() {
+  if (!BOT_TOKEN) return;
   try {
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=2`);
     const data = await res.json();
