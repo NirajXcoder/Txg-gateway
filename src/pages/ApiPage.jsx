@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Copy, Check, Code2, Terminal, Link2 } from 'lucide-react';
 
+const BACKEND_URL = 'https://txg-gateway-2.onrender.com';
+
 export default function ApiPage({ currentUser }) {
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
@@ -11,8 +13,8 @@ export default function ApiPage({ currentUser }) {
   const apiKey = currentUser?.apiKey || `txg_live_${currentUser?.telegramId || '5249309895'}`;
   const apiSecret = currentUser?.apiSecret || `sec_${currentUser?.id ? currentUser.id.slice(-8) : '72297738'}`;
 
-  // 2. Exact Combined API URL Format
-  const customApiUrl = `https://TXGGATEWAY/APIs/api?token=${apiKey}&key=${apiSecret}&paytoNumber={number}&amount={amount}&comment={comment}`;
+  // 2. Real Live Combined API URL Format
+  const customApiUrl = `${BACKEND_URL}/api?token=${apiKey}&key=${apiSecret}&paytoNumber={number}&amount={amount}&comment={comment}`;
 
   const copyToClipboard = (text, type) => {
     navigator.clipboard.writeText(text);
