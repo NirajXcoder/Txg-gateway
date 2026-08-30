@@ -8,13 +8,14 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
-const BOT_TOKEN = process.env.BOT_TOKEN; // Render Environment Variables se read karega
+const BOT_TOKEN = process.env.BOT_TOKEN;
 
-// In-memory active OTP store (30s Expiry)
+// In-memory active OTP store
 const activeOtps = {};
 
 // Helper: Send Telegram Message
 async function sendTelegramMessage(telegramId, text) {
+  if (!BOT_TOKEN || !telegramId) return false;
   try {
     const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
@@ -91,76 +92,87 @@ const handlePayout = (req, res) => {
 app.all(['/api.php', '/upi.php', '/api/api.php', '/apis/api', '/api/pay', '/api'], handlePayout);
 
 // ==========================================
-// 2. AUTHENTICATION (Initial Balance: ₹0.00)
+// 2. AUTHENTICATION (Telegram ID + Phone + 60s OTP)
 // ==========================================
 app.post('/api/auth/send-otp', async (req, res) => {
-  const { telegramId } = req.body;
-  if (!telegramId) return res.status(400).json({ success: false, error: 'Telegram ID is required' });
+  const { telegramId, phone } = req.body;
+  const key = telegramId || phone;
+  if (!key) return res.status(400).json({ success: false, error: 'Telegram ID or Phone is required' });
 
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-  activeOtps[telegramId] = { code: otpCode, expiresAt: Date.now() + 30000 };
+  const otpData = { code: otpCode, expiresAt: Date.now() + 60000 }; // 60 Seconds Expiry
+
+  if (telegramId) activeOtps[telegramId.trim()] = otpData;
+  if (phone) activeOtps[phone.trim()] = otpData;
 
   const messageText = `👋 *Hello! Welcome to TXG Gateway Official Bot.*` +
     `\n\n🔒 *YOUR VERIFICATION CODE IS:* \`${otpCode}\`` +
-    `\n\n⏰ *Valid for 30 Seconds only.* Do not share this code with anyone!`;
+    `\n\n⏰ *Valid for 60 Seconds.* Do not share this code with anyone!`;
 
-  const sent = await sendTelegramMessage(telegramId, messageText);
-  if (!sent) {
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to send OTP. Please start the bot @TXGGATEWAY_bot first.'
-    });
+  if (telegramId) {
+    sendTelegramMessage(telegramId, messageText);
   }
 
   return res.json({
     success: true,
-    message: 'OTP sent directly to your Telegram Bot (@TXGGATEWAY_bot).'
+    message: 'OTP generated. Please start the Telegram bot to view code.'
   });
 });
 
 app.post('/api/auth/register', (req, res) => {
-  const { username, email, telegramId, password, otp } = req.body;
+  const { username, email, phone, telegramId, password, otp } = req.body;
+  const lookupKey = (telegramId && activeOtps[telegramId]) ? telegramId : phone;
+  const otpRecord = activeOtps[lookupKey];
 
-  const otpRecord = activeOtps[telegramId];
   if (!otpRecord || otpRecord.expiresAt < Date.now()) {
-    return res.status(400).json({ error: 'OTP has expired after 30 seconds. Please request again.' });
+    return res.status(400).json({ error: 'OTP expired after 60 seconds. Please click Get OTP again.' });
   }
   if (otpRecord.code !== otp) {
     return res.status(400).json({ error: 'Invalid OTP code entered.' });
   }
-  delete activeOtps[telegramId];
+
+  if (telegramId) delete activeOtps[telegramId];
+  if (phone) delete activeOtps[phone];
 
   const id = 'usr_' + Date.now();
-  const apiKey = `txg_live_${telegramId}`;
+  const apiKey = `txg_live_${telegramId || phone}`;
   const apiSecret = `sec_${Math.random().toString(36).substring(2, 10)}`;
 
   db.run(
     `INSERT INTO users (id, username, email, telegram_id, phone, password, balance, role, api_key, api_secret) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, username, email, telegramId, telegramId, password, 0.00, 'user', apiKey, apiSecret],
+    [id, username, email, telegramId, phone, password, 0.00, 'user', apiKey, apiSecret],
     function (err) {
-      if (err) return res.status(400).json({ error: 'User with this Telegram ID or Email already exists.' });
+      if (err) return res.status(400).json({ error: 'User with this Telegram ID, Phone or Email already exists.' });
       return res.json({
         success: true,
-        user: { id, username, email, telegramId, balance: 0.00, role: 'user', apiKey, apiSecret }
+        user: { id, username, email, telegramId, phone, balance: 0.00, role: 'user', apiKey, apiSecret }
       });
     }
   );
 });
 
 app.post('/api/auth/login', (req, res) => {
-  const { telegramId, password, otp } = req.body;
+  const { telegramId, phone, password, otp } = req.body;
+  const lookupKey = (telegramId && activeOtps[telegramId]) ? telegramId : phone;
+  const otpRecord = activeOtps[lookupKey];
 
-  const otpRecord = activeOtps[telegramId];
   if (!otpRecord || otpRecord.expiresAt < Date.now()) {
-    return res.status(400).json({ error: 'OTP has expired after 30 seconds. Please request again.' });
+    return res.status(400).json({ error: 'OTP expired after 60 seconds. Please request again.' });
   }
   if (otpRecord.code !== otp) {
     return res.status(400).json({ error: 'Invalid OTP code entered.' });
   }
-  delete activeOtps[telegramId];
 
-  db.get(`SELECT * FROM users WHERE telegram_id = ? AND password = ?`, [telegramId, password], (err, row) => {
-    if (err || !row) return res.status(400).json({ error: 'Invalid Telegram ID or Password.' });
+  if (telegramId) delete activeOtps[telegramId];
+  if (phone) delete activeOtps[phone];
+
+  const query = telegramId
+    ? `SELECT * FROM users WHERE (telegram_id = ? OR phone = ?) AND password = ?`
+    : `SELECT * FROM users WHERE phone = ? AND password = ?`;
+  const params = telegramId ? [telegramId, phone || telegramId, password] : [phone, password];
+
+  db.get(query, params, (err, row) => {
+    if (err || !row) return res.status(400).json({ error: 'Invalid credentials or Password.' });
     if (row.is_banned) return res.status(403).json({ error: 'Your account has been banned by Admins.' });
 
     return res.json({
@@ -181,7 +193,7 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 // ==========================================
-// 3. ADMIN ADD/REDUCE FUND VIA APPROVAL LOGIC
+// 3. ADMIN APPROVAL
 // ==========================================
 app.post('/api/admin/approve', (req, res) => {
   const { txnId, adminHandle } = req.body;
@@ -196,7 +208,7 @@ app.post('/api/admin/approve', (req, res) => {
     if (txn.type === 'Add Fund' || txn.type === 'Earning') {
       db.run(`UPDATE users SET balance = balance + ? WHERE id = ?`, [txn.amount, txn.user_id]);
     } else if (txn.type === 'Withdraw') {
-      db.run(`UPDATE users SET balance = MAX(0, balance - ?) WHERE id = ?`, [txn.amount, txn.user_id]);
+      db.run(`UPDATE users SET balance = GREATEST(0, balance - ?) WHERE id = ?`, [txn.amount, txn.user_id]);
     }
 
     db.run(
@@ -212,7 +224,7 @@ app.post('/api/admin/approve', (req, res) => {
 });
 
 // ==========================================
-// 4. MANUAL BALANCE ADJUSTMENT (Add / Deduct) BY ADMIN & OWNER
+// 4. MANUAL BALANCE ADJUSTMENT
 // ==========================================
 app.post('/api/admin/adjust-balance', (req, res) => {
   const { targetUserId, amount, type, handlerRole, handlerIdentifier, reason } = req.body;
@@ -222,7 +234,7 @@ app.post('/api/admin/adjust-balance', (req, res) => {
     return res.status(400).json({ success: false, error: 'Invalid parameters provided.' });
   }
 
-  db.get(`SELECT * FROM users WHERE id = ? OR telegram_id = ?`, [targetUserId, targetUserId], (err, user) => {
+  db.get(`SELECT * FROM users WHERE id = ? OR telegram_id = ? OR phone = ?`, [targetUserId, targetUserId, targetUserId], (err, user) => {
     if (err || !user) {
       return res.status(404).json({ success: false, error: 'Target user not found.' });
     }
@@ -245,14 +257,12 @@ app.post('/api/admin/adjust-balance', (req, res) => {
       const time = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
       const actionText = `${type === 'ADD' ? 'Credited' : 'Debited'} ₹${adjAmount} (${reason || 'Manual Adjustment'}) by ${handlerRole}`;
 
-      // Admin & Owner Audit Log entry
       db.run(
         `INSERT INTO admin_logs (id, date, time, admin_handle, action, amount, user_phone_or_telegram, user_name, status, txn_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [logId, date, time, `${handlerRole}: ${handlerIdentifier}`, actionText, adjAmount, user.telegram_id, user.username, 'Completed', logId]
+        [logId, date, time, `${handlerRole}: ${handlerIdentifier}`, actionText, adjAmount, user.telegram_id || user.phone, user.username, 'Completed', logId]
       );
 
-      // Telegram Bot Instant Notification to User
       const botMsg = type === 'ADD'
         ? `🎁 *WALLET CREDITED*\n\n💰 *Amount:* +₹${adjAmount.toLocaleString('en-IN')}\n🛡️ *Updated By:* ${handlerRole} (${handlerIdentifier})\n💵 *New Balance:* ₹${(user.balance + adjAmount).toLocaleString('en-IN')}`
         : `⚠️ *WALLET DEBITED*\n\n💰 *Amount:* -₹${adjAmount.toLocaleString('en-IN')}\n🛡️ *Processed By:* ${handlerRole} (${handlerIdentifier})\n💵 *New Balance:* ₹${(user.balance - adjAmount).toLocaleString('en-IN')}`;
@@ -268,9 +278,8 @@ app.post('/api/admin/adjust-balance', (req, res) => {
   });
 });
 
-// Logs Fetching Route for Owner & Admin Dashboards
 app.get('/api/admin/logs', (req, res) => {
-  db.all(`SELECT * FROM admin_logs ORDER BY rowid DESC LIMIT 100`, [], (err, rows) => {
+  db.all(`SELECT * FROM admin_logs ORDER BY created_at DESC LIMIT 100`, [], (err, rows) => {
     if (err) return res.status(500).json({ success: false, error: 'Database error' });
     return res.json({ success: true, logs: rows });
   });
@@ -296,16 +305,38 @@ async function pollTelegramUpdates() {
         const text = msg.text.trim();
 
         if (text.startsWith('/start')) {
-          const welcomeMsg = `👋 *Hello! Welcome to TXG Gateway Official Bot.*` +
-            `\n\n🔐 Verification & Payout Notification Bot` +
-            `\n\nType \`/balance\` anytime to check your TXG Wallet Balance!`;
-          await sendTelegramMessage(chatId, welcomeMsg);
+          const parts = text.split(' ');
+          const payload = parts[1];
+
+          let foundOtp = null;
+          if (payload && payload.startsWith('otp_')) {
+            const key = payload.replace('otp_', '').trim();
+            if (activeOtps[key] && activeOtps[key].expiresAt > Date.now()) {
+              foundOtp = activeOtps[key].code;
+            }
+          }
+
+          if (!foundOtp && activeOtps[chatId] && activeOtps[chatId].expiresAt > Date.now()) {
+            foundOtp = activeOtps[chatId].code;
+          }
+
+          if (foundOtp) {
+            const otpMsg = `🔐 *TXG GATEWAY VERIFICATION CODE*` +
+              `\n\nYour OTP is: \`${foundOtp}\`` +
+              `\n\n⏰ _Valid for 60 seconds. Enter this code on the website to continue._`;
+            await sendTelegramMessage(chatId, otpMsg);
+          } else {
+            const welcomeMsg = `👋 *Hello! Welcome to TXG Gateway Official Bot.*` +
+              `\n\n🔐 Verification & Payout Notification Bot` +
+              `\n\nType \`/balance\` anytime to check your TXG Wallet Balance!`;
+            await sendTelegramMessage(chatId, welcomeMsg);
+          }
         } else if (text.startsWith('/balance')) {
           db.get(`SELECT * FROM users WHERE telegram_id = ?`, [chatId], async (err, row) => {
             if (row) {
               const balanceMsg = `💰 *TXG WALLET BALANCE*` +
                 `\n\n👤 *User:* ${row.username}` +
-                `\n💵 *Available Balance:* ₹${row.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+                `\n💵 *Available Balance:* ₹${parseFloat(row.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
               await sendTelegramMessage(chatId, balanceMsg);
             } else {
               await sendTelegramMessage(chatId, `⚠️ Account Not Registered. Please Register on TXG Gateway first.`);
