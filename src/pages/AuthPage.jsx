@@ -17,10 +17,10 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
   const [statusMsg, setStatusMsg] = useState('');
   const [showBotModal, setShowBotModal] = useState(false);
 
-  // 1. Send OTP Button Click -> Triggers OTP & Opens the Bot Start Popup
+  // 1. Send OTP Trigger & Open Warning Modal
   const handleSendOtp = async () => {
-    if (!telegramId && !phone) {
-      setError('Please enter your Phone Number and Telegram ID first.');
+    if (!phone || phone.trim().length < 10) {
+      setError('Please enter a valid 10-digit Phone Number first.');
       return;
     }
     setError('');
@@ -32,29 +32,27 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          telegramId: telegramId ? telegramId.trim() : '', 
-          phone: phone ? phone.trim() : '' 
+          phone: phone.trim(),
+          telegramId: telegramId ? telegramId.trim() : ''
         })
       });
       const data = await res.json();
 
       if (data.success) {
-        // Modal popup open karega
         setShowBotModal(true);
       } else {
         setError(data.error || 'Failed to dispatch OTP. Please check your details.');
       }
     } catch (err) {
-      // Network delay ke case me bhi popup open ho jayega
       setShowBotModal(true);
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. Redirect to Telegram Bot
+  // 2. Redirect User to Telegram Bot
   const handleRedirectToBot = () => {
-    const payload = telegramId ? telegramId.trim() : phone.trim();
+    const payload = phone.trim() || telegramId.trim();
     window.open(`https://t.me/${BOT_USERNAME}?start=otp_${payload}`, '_blank');
     setShowBotModal(false);
   };
@@ -72,8 +70,8 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
 
     const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
     const payload = isLogin
-      ? { telegramId, phone, password, otp }
-      : { username, email, phone, telegramId, password, otp };
+      ? { phone: phone.trim(), telegramId: telegramId.trim(), password, otp: otp.trim() }
+      : { username: username.trim(), email: email.trim(), phone: phone.trim(), telegramId: telegramId.trim(), password, otp: otp.trim() };
 
     try {
       const res = await fetch(`${BACKEND_URL}${endpoint}`, {
@@ -89,7 +87,7 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
           if (onLoginSuccess) onLoginSuccess(userObj);
           if (onAuthSuccess) onAuthSuccess(userObj);
         } else {
-          setStatusMsg('🎉 Account Created Successfully! Please Login.');
+          setStatusMsg('🎉 Account Created Successfully! Please switch to Login tab.');
           setIsLogin(true);
           setOtp('');
           setPassword('');
@@ -98,7 +96,7 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
         setError(data.error || 'Authentication failed. Please verify your details.');
       }
     } catch (err) {
-      setError('Authentication server error. Please try again.');
+      setError('Server connection error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -111,7 +109,7 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
           {isLogin ? 'Welcome Back' : 'Create Account'}
         </h2>
         <p className="text-xs text-slate-400 text-center mb-6">
-          {isLogin ? 'Login to your TXG Gateway account' : 'Register for TXG Payment Gateway'}
+          {isLogin ? 'Login with your Phone & Telegram ID' : 'Register for TXG Payment Gateway'}
         </p>
 
         {error && (
@@ -127,13 +125,14 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Register Only Fields */}
           {!isLogin && (
             <>
               <div>
                 <label className="block text-xs text-slate-400 mb-1 font-medium">Username</label>
                 <input
                   type="text"
-                  placeholder="Enter username"
+                  placeholder="Enter full name / username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full bg-[#090d16] border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
@@ -154,28 +153,15 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
             </>
           )}
 
-          {/* Phone Number Field */}
+          {/* 1. Phone Number Field (Visible in Both Login & Register) */}
           <div>
             <label className="block text-xs text-slate-400 mb-1 font-medium">Phone Number</label>
-            <input
-              type="tel"
-              placeholder="e.g. 9876543210"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full bg-[#090d16] border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-              required
-            />
-          </div>
-
-          {/* Telegram ID Field with Get OTP Button */}
-          <div>
-            <label className="block text-xs text-slate-400 mb-1 font-medium">Telegram ID</label>
             <div className="flex gap-2">
               <input
-                type="text"
-                placeholder="e.g. 5249309895"
-                value={telegramId}
-                onChange={(e) => setTelegramId(e.target.value)}
+                type="tel"
+                placeholder="e.g. 9876543210"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
                 className="w-full bg-[#090d16] border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                 required
               />
@@ -190,6 +176,20 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
             </div>
           </div>
 
+          {/* 2. Telegram ID Field (Visible in Both Login & Register) */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1 font-medium">Telegram User ID</label>
+            <input
+              type="text"
+              placeholder="e.g. 5249309895"
+              value={telegramId}
+              onChange={(e) => setTelegramId(e.target.value)}
+              className="w-full bg-[#090d16] border border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+              required
+            />
+          </div>
+
+          {/* 3. Password Field */}
           <div>
             <label className="block text-xs text-slate-400 mb-1 font-medium">Password</label>
             <input
@@ -202,11 +202,12 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
             />
           </div>
 
+          {/* 4. 6-Digit Bot OTP Field */}
           <div>
             <label className="block text-xs text-slate-400 mb-1 font-medium">6-Digit Bot OTP</label>
             <input
               type="text"
-              placeholder="Enter OTP from Telegram Bot"
+              placeholder="Enter OTP received from Bot"
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               maxLength={6}
@@ -215,6 +216,7 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
             />
           </div>
 
+          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
@@ -237,10 +239,8 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
 
       {/* POPUP MODAL: BOT KO START KARO TO HI OTP AAYEGA */}
       {showBotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="bg-[#131b2e] border border-indigo-500/40 max-w-sm w-full rounded-2xl p-6 shadow-2xl text-center">
-            
-            {/* Warning / Bot Icon */}
             <div className="w-14 h-14 bg-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl border border-indigo-500/30">
               🤖
             </div>
@@ -249,7 +249,6 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
               Telegram Bot Verification
             </h3>
             
-            {/* Required Message */}
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-xs text-amber-300 font-medium mb-4 leading-relaxed">
               ⚠️ <strong>Note:</strong> Bot ko start karoge tabhi OTP aayega!
             </div>
@@ -286,7 +285,6 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
                 Close
               </button>
             </div>
-
           </div>
         </div>
       )}
