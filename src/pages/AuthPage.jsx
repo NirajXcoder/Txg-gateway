@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 
+// Live Render Backend URL
+const BACKEND_URL = 'https://txg-gateway-2.onrender.com';
+
 export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview }) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
@@ -23,7 +26,7 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
     setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:5000/api/auth/send-otp', {
+      const res = await fetch(`${BACKEND_URL}/api/auth/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ telegramId })
@@ -31,19 +34,13 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
       const data = await res.json();
 
       if (data.success) {
-        if (data.demoOtp) {
-          setOtp(data.demoOtp);
-          setStatusMsg(`Demo OTP set to ${data.demoOtp}. Click Login/Register to proceed!`);
-        } else {
-          setShowBotModal(true);
-        }
+        setShowBotModal(true);
+        setStatusMsg('Verification OTP dispatched to your Telegram bot.');
       } else {
         setError(data.error || 'Failed to dispatch OTP. Please check your Telegram ID.');
       }
     } catch (err) {
-      // GitHub Pages Fallback (when local server is not active)
-      setOtp('123456');
-      setStatusMsg('GitHub Pages Demo: Verification OTP 123456 auto-filled. Click to proceed!');
+      setError('Backend server connection failed. Please ensure backend is active.');
     } finally {
       setLoading(false);
     }
@@ -66,7 +63,7 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
       : { username, email, telegramId, password, otp };
 
     try {
-      const res = await fetch(`http://localhost:5000${endpoint}`, {
+      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -90,26 +87,7 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
         setError(data.error || 'Authentication failed. Please verify your details.');
       }
     } catch (err) {
-      // GitHub Pages Fallback: Smooth Client-side Transition
-      if (isLogin) {
-        const userObj = {
-          id: 'usr_' + Date.now(),
-          username: username || 'User_' + telegramId.slice(-4),
-          email: 'user@txggateway.com',
-          telegramId: telegramId,
-          phone: telegramId,
-          balance: 15450.00,
-          role: 'user',
-          apiKey: `txg_live_${telegramId}`
-        };
-        if (onLoginSuccess) onLoginSuccess(userObj);
-        if (onAuthSuccess) onAuthSuccess(userObj);
-      } else {
-        setStatusMsg('🎉 Account Created Successfully! Please enter your Telegram ID & Password to Login.');
-        setIsLogin(true);
-        setOtp('');
-        setPassword('');
-      }
+      setError('Authentication server error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -182,7 +160,7 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
                 disabled={loading}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition"
               >
-                Send OTP
+                {loading ? 'Sending...' : 'Send OTP'}
               </button>
             </div>
           </div>
@@ -232,9 +210,7 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
         </div>
       </div>
 
-      {/* ========================================== */}
-      {/* ENGLISH INSTRUCTION POPUP MODAL (NO CODE DISPLAYED) */}
-      {/* ========================================== */}
+      {/* ENGLISH INSTRUCTION POPUP MODAL */}
       {showBotModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="bg-[#131b2e] border border-slate-700 max-w-sm w-full rounded-2xl p-6 shadow-2xl text-center animate-in fade-in zoom-in duration-200">
@@ -245,15 +221,15 @@ export default function AuthPage({ onLoginSuccess, onAuthSuccess, onGuestPreview
             <h3 className="text-lg font-bold text-white mb-2">Check Telegram Bot</h3>
             
             <p className="text-xs text-slate-300 leading-relaxed mb-4">
-              Your 6-digit verification code has been dispatched. Please open our official bot and click <span className="text-indigo-400 font-semibold">/start</span> if you haven't initiated it yet.[cite: 3]
+              Your 6-digit verification code has been dispatched. Please open our official bot and click <span className="text-indigo-400 font-semibold">/start</span> if you haven't initiated it yet.
             </p>
 
             <div className="bg-[#090d16] border border-slate-800 rounded-lg p-3 text-xs text-slate-400 mb-5 text-left space-y-1.5">
               <p className="flex items-center gap-2">
-                <span className="text-indigo-400 font-bold">1.</span> Open Telegram Bot: <strong className="text-white">@TXGGATEWAY_bot</strong>[cite: 3]
+                <span className="text-indigo-400 font-bold">1.</span> Open Telegram Bot: <strong className="text-white">@TXGGATEWAY_bot</strong>
               </p>
               <p className="flex items-center gap-2">
-                <span className="text-indigo-400 font-bold">2.</span> Press <strong>/start</strong> to receive the OTP message.[cite: 3]
+                <span className="text-indigo-400 font-bold">2.</span> Press <strong>/start</strong> to receive the OTP message.
               </p>
               <p className="flex items-center gap-2 text-amber-400">
                 <span className="font-bold">3.</span> The OTP will expire in <strong>30 seconds</strong>.
