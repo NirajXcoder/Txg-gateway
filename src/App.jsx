@@ -22,23 +22,22 @@ import { getStore, saveStore, sendTelegramPaymentNotification, pollTelegramBotCo
 const BACKEND_URL = 'https://txg-gateway-2.onrender.com';
 
 export default function App() {
+  // 1. DIRECT LOCALSTORAGE SE PERSISTENT STORE LOAD
   const [store, setStore] = useState(() => {
     const s = getStore();
-    const savedUser = localStorage.getItem('txg_user');
-    if (savedUser && !s.currentUser) {
-      try {
+    try {
+      const savedUser = localStorage.getItem('txg_user');
+      if (savedUser) {
         s.currentUser = JSON.parse(savedUser);
-      } catch (e) {}
-    }
+      }
+    } catch (e) {}
     return s;
   });
 
-  // Persistent login state from localStorage
+  // 2. CHECK IF USER IS LOGGED IN
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    const storedAuth = localStorage.getItem('txg_is_logged_in');
-    if (storedAuth === 'true') return true;
-    const current = getStore()?.currentUser;
-    return Boolean(current && (current.id || current.telegramId || current.phone));
+    const savedUser = localStorage.getItem('txg_user');
+    return Boolean(savedUser && savedUser !== 'null');
   });
 
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -51,12 +50,15 @@ export default function App() {
   const [isBotAlertOpen, setIsBotAlertOpen] = useState(false);
   const [isHiddenPortalOpen, setIsHiddenPortalOpen] = useState(false);
 
-  // Save store changes
+  // Save store changes safely (never delete currentUser if exists)
   useEffect(() => {
+    if (store && store.currentUser) {
+      localStorage.setItem('txg_user', JSON.stringify(store.currentUser));
+    }
     saveStore(store);
   }, [store]);
 
-  // Active Telegram Bot Command Polling (/start, /balance)
+  // Active Telegram Bot Command Polling
   useEffect(() => {
     const interval = setInterval(() => {
       pollTelegramBotCommands();
@@ -96,10 +98,10 @@ export default function App() {
     fetchRealtimeTransactions();
   }, [isLoggedIn, currentUser?.id, currentUser?.telegramId, currentUser?.phone]);
 
-  // Handlers with LocalStorage Persistence
+  // Login Success
   const handleLoginSuccess = (userData) => {
-    localStorage.setItem('txg_is_logged_in', 'true');
     localStorage.setItem('txg_user', JSON.stringify(userData));
+    localStorage.setItem('txg_is_logged_in', 'true');
     setStore((prev) => ({
       ...prev,
       currentUser: userData,
@@ -111,6 +113,7 @@ export default function App() {
     setActiveTab('dashboard');
   };
 
+  // Guest Preview (with persistent guest account)
   const handleGuestPreview = () => {
     const guestUser = {
       id: 'usr_guest',
@@ -120,8 +123,8 @@ export default function App() {
       balance: 0.00,
       role: 'user'
     };
-    localStorage.setItem('txg_is_logged_in', 'true');
     localStorage.setItem('txg_user', JSON.stringify(guestUser));
+    localStorage.setItem('txg_is_logged_in', 'true');
     setStore((prev) => ({
       ...prev,
       currentUser: guestUser
@@ -130,9 +133,10 @@ export default function App() {
     setActiveTab('dashboard');
   };
 
+  // Logout
   const handleLogout = () => {
-    localStorage.removeItem('txg_is_logged_in');
     localStorage.removeItem('txg_user');
+    localStorage.removeItem('txg_is_logged_in');
     setStore((prev) => ({
       ...prev,
       currentUser: null
@@ -198,7 +202,7 @@ export default function App() {
     });
   };
 
-  // Admin / Owner Approve Txn + Trigger Telegram Bot Notification
+  // Admin / Owner Approve Txn
   const handleApproveTxn = async (txnId, adminHandle = '@txgimran') => {
     const targetTxn = store.transactions.find((t) => t.id === txnId);
     if (targetTxn && targetTxn.telegramId) {
@@ -255,7 +259,7 @@ export default function App() {
     });
   };
 
-  // Admin / Owner Reject Txn + Trigger Telegram Bot Notification
+  // Admin / Owner Reject Txn
   const handleRejectTxn = async (txnId, adminHandle = '@txgimran') => {
     const targetTxn = store.transactions.find((t) => t.id === txnId);
     if (targetTxn && targetTxn.telegramId) {
@@ -291,7 +295,6 @@ export default function App() {
     });
   };
 
-  // Toggle Ban User
   const handleToggleBanUser = (userId) => {
     setStore((prev) => ({
       ...prev,
@@ -299,7 +302,6 @@ export default function App() {
     }));
   };
 
-  // Toggle Freeze User
   const handleToggleFreezeUser = (userId) => {
     setStore((prev) => ({
       ...prev,
@@ -307,7 +309,6 @@ export default function App() {
     }));
   };
 
-  // Owner Add Admin
   const handleAddAdmin = (adminData) => {
     setStore((prev) => ({
       ...prev,
@@ -315,7 +316,6 @@ export default function App() {
     }));
   };
 
-  // Owner Remove Admin
   const handleRemoveAdmin = (adminId) => {
     setStore((prev) => ({
       ...prev,
@@ -323,7 +323,6 @@ export default function App() {
     }));
   };
 
-  // Profile update
   const handleUpdateProfile = (profileData) => {
     setStore((prev) => {
       const updatedUser = { ...prev.currentUser, ...profileData };
@@ -335,7 +334,6 @@ export default function App() {
     });
   };
 
-  // Password change
   const handleChangePassword = (oldPass, newPass) => {
     setStore((prev) => {
       const updatedUser = { ...prev.currentUser, password: newPass };
@@ -347,14 +345,13 @@ export default function App() {
     });
   };
 
+  // AGAR LOGGED IN NAHI HAI TOH HI AUTH PAGE DIKHEGA
   if (!isLoggedIn) {
     return <AuthPage onLoginSuccess={handleLoginSuccess} onGuestPreview={handleGuestPreview} />;
   }
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
-      
-      {/* Header Bar */}
       <Header
         onOpenMenu={() => setIsSidebarOpen(true)}
         currentUser={currentUser}
@@ -362,7 +359,6 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      {/* Main Responsive Body Container */}
       <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4">
         {activeTab === 'dashboard' && (
           <UserDashboard
@@ -385,9 +381,7 @@ export default function App() {
         )}
 
         {activeTab === 'api' && <ApiPage currentUser={currentUser} />}
-
         {activeTab === 'channel' && <ChannelPage />}
-
         {activeTab === 'support' && <SupportPage />}
 
         {activeTab === 'settings' && (
@@ -426,7 +420,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Navigation Drawer Sidebar */}
       <Sidebar
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
@@ -436,7 +429,6 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      {/* Modals */}
       <AddFundModal
         isOpen={isAddFundOpen}
         onClose={() => setIsAddFundOpen(false)}
@@ -468,7 +460,6 @@ export default function App() {
         onClose={() => setIsHiddenPortalOpen(false)}
         onSwitchRole={(role) => setActiveTab(role)}
       />
-
     </div>
   );
 }
