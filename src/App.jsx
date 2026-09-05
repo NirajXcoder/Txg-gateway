@@ -23,8 +23,13 @@ const BACKEND_URL = 'https://txg-gateway-2.onrender.com';
 
 export default function App() {
   const [store, setStore] = useState(getStore);
-  // Starting state is false so user sees the Auth screen first
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // Auto-login on refresh if user is already saved in store
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    const current = getStore()?.currentUser;
+    return Boolean(current && (current.id || current.telegramId || current.phone));
+  });
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -99,6 +104,10 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    setStore((prev) => ({
+      ...prev,
+      currentUser: null
+    }));
     setIsLoggedIn(false);
   };
 
