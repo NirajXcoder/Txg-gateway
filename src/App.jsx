@@ -22,10 +22,21 @@ import { getStore, saveStore, sendTelegramPaymentNotification, pollTelegramBotCo
 const BACKEND_URL = 'https://txg-gateway-2.onrender.com';
 
 export default function App() {
-  const [store, setStore] = useState(getStore);
+  const [store, setStore] = useState(() => {
+    const s = getStore();
+    const savedUser = localStorage.getItem('txg_user');
+    if (savedUser && !s.currentUser) {
+      try {
+        s.currentUser = JSON.parse(savedUser);
+      } catch (e) {}
+    }
+    return s;
+  });
 
-  // Auto-login on refresh if user is already saved in store
+  // Persistent login state from localStorage
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    const storedAuth = localStorage.getItem('txg_is_logged_in');
+    if (storedAuth === 'true') return true;
     const current = getStore()?.currentUser;
     return Boolean(current && (current.id || current.telegramId || current.phone));
   });
@@ -85,8 +96,10 @@ export default function App() {
     fetchRealtimeTransactions();
   }, [isLoggedIn, currentUser?.id, currentUser?.telegramId, currentUser?.phone]);
 
-  // Handlers
+  // Handlers with LocalStorage Persistence
   const handleLoginSuccess = (userData) => {
+    localStorage.setItem('txg_is_logged_in', 'true');
+    localStorage.setItem('txg_user', JSON.stringify(userData));
     setStore((prev) => ({
       ...prev,
       currentUser: userData,
@@ -99,11 +112,27 @@ export default function App() {
   };
 
   const handleGuestPreview = () => {
+    const guestUser = {
+      id: 'usr_guest',
+      username: 'Guest User',
+      telegramId: 'guest_user',
+      phone: '9876543210',
+      balance: 0.00,
+      role: 'user'
+    };
+    localStorage.setItem('txg_is_logged_in', 'true');
+    localStorage.setItem('txg_user', JSON.stringify(guestUser));
+    setStore((prev) => ({
+      ...prev,
+      currentUser: guestUser
+    }));
     setIsLoggedIn(true);
     setActiveTab('dashboard');
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('txg_is_logged_in');
+    localStorage.removeItem('txg_user');
     setStore((prev) => ({
       ...prev,
       currentUser: null
